@@ -4,6 +4,7 @@ from einops import rearrange
 import constants as cst
 from models.bin import BiN
 from models.mlplob import MLP
+from models.gating import GatingLayer
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -72,6 +73,7 @@ class TLOB(nn.Module):
         self.second_branch = nn.ModuleList()
         self.order_type_embedder = nn.Embedding(3, 1)
         self.norm_layer = BiN(num_features, seq_size)
+        self.gating_layer = GatingLayer(num_features)
         self.emb_layer = nn.Linear(num_features, hidden_dim)
         if is_sin_emb:
             self.pos_encoder = sinusoidal_positional_embedding(seq_size, hidden_dim)
@@ -108,6 +110,7 @@ class TLOB(nn.Module):
         x = rearrange(x, 'b s f -> b f s')
         x = self.norm_layer(x)
         x = rearrange(x, 'b f s -> b s f')
+        x = self.gating_layer(x)
         x = self.emb_layer(x)
         x = x[:] + self.pos_encoder
         for i in range(len(self.layers)):
