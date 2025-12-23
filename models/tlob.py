@@ -4,7 +4,7 @@ from einops import rearrange
 import constants as cst
 from models.bin import BiN
 from models.mlplob import MLP
-from models.gating import LowRankGatingLayer
+from models.gating import TemporalLowRankGatingLayer
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -73,7 +73,7 @@ class TLOB(nn.Module):
         self.second_branch = nn.ModuleList()
         self.order_type_embedder = nn.Embedding(3, 1)
         self.norm_layer = BiN(num_features, seq_size)
-        self.gating_layer = LowRankGatingLayer(num_features)
+        self.gating_layer = TemporalLowRankGatingLayer(num_features)
         self.emb_layer = nn.Linear(num_features, hidden_dim)
         if is_sin_emb:
             self.pos_encoder = sinusoidal_positional_embedding(seq_size, hidden_dim)
