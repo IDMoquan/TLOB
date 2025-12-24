@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import constants as cst
+from einops import rearrange
 
 class BiN(nn.Module):
     def __init__(self, d1, t1):
@@ -84,3 +85,83 @@ class BiN(nn.Module):
         x = self.y1 * X1 + self.y2 * X2
 
         return x
+    
+class CovarianceAwareBiN(nn.Module):
+    def __init__(self, 
+                 num_features: int, 
+                 seq_size: int,
+                 low_rank_k: int = 8,  # 协方差低秩近似维度（远小于num_features）
+                 gamma_init: float = 0.1):
+        super().__init__()
+        # 1. 保留原始 BiN 线性归一化
+        self.bi_norm = BiN(num_features, seq_size)
+        
+        # 2. 协方差感知核心参数
+        self.num_features = num_features
+        self.seq_size = seq_size
+        self.low_rank_k = min(low_rank_k, num_features)  # 防止k超过特征数
+        
+        # 可学习协方差强度系数（γ）
+        self.gamma = nn.Parameter(torch.tensor(gamma_init))
+        # 特征投影矩阵（替代纯统计协方差，可学习）
+        self.cov_proj = nn.Parameter(torch.randn(num_features, self.low_rank_k))
+        nn.init.orthogonal_(self.cov_proj)  # 正交初始化，稳定投影
+        
+        # 3. 门控融合层（自适应权衡协方差特征/原始特征）
+        self.gate = nn.Sequential(
+            nn.Linear(num_features, num_features),
+            nn.LayerNorm(num_features),
+            nn.Sigmoid()  # 输出0-1权重
+        )
+        
+        # 4. 轻量正则：防止协方差过拟合
+        self.dropout = nn.Dropout(0.05)
+        self.res_scale = nn.Parameter(torch.ones(1))
+
+    def compute_feature_covariance(self, x):
+        """
+        计算特征协方差矩阵（轻量化，低秩近似）
+        x: [batch, features, seq] → 输出协方差投影特征 [batch, features, seq]
+        """
+        # Step 1: 维度重排 → [batch*seq, features]（合并批次和时序，计算全局协方差）
+        x_flat = rearrange(x, 'b f s -> (b s) f')  # [BS, f]
+        
+        # Step 2: 去均值（特征维度）
+        x_centered = x_flat - x_flat.mean(dim=0, keepdim=True)  # [BS, f]
+        
+        # Step 3: 低秩协方差计算（避免O(f²)）
+        # 方法：先投影到低维，再计算协方差，最后投影回原维度
+        x_low = x_centered @ self.cov_proj  # [BS, k] → 低维投影
+        cov_low = x_low.T @ x_low / (x_low.shape[0] - 1)  # [k, k] → 低维协方差
+        
+        # Step 4: 协方差引导的特征变换
+        x_cov_low = x_low @ cov_low  # [BS, k] → 协方差增强
+        x_cov = x_cov_low @ self.cov_proj.T  # [BS, f] → 投影回原维度
+        
+        # Step 5: 恢复原维度 + 强度控制
+        x_cov = rearrange(x_cov, '(b s) f -> b f s', b=x.shape[0], s=self.seq_size)
+        x_cov = x_cov * torch.abs(self.gamma)  # 用abs保证非负强度
+        
+        return x_cov
+
+    def forward(self, x):
+        """
+        x: [batch, features, seq] → 原始输入（与BiN一致）
+        """
+        # Step 1: 原始 BiN 归一化
+        x_bi = self.bi_norm(x)  # [b, f, s]
+        
+        # Step 2: 协方差感知特征增强
+        x_cov = self.compute_feature_covariance(x_bi)  # [b, f, s]
+        
+        # Step 3: 门控融合（维度适配）
+        # 门控输入：[b, f, s] → [b*s, f] → 生成逐特征门控权重
+        gate_input = rearrange(x_bi, 'b f s -> (b s) f')
+        gate_weight = self.gate(gate_input)  # [BS, f]
+        gate_weight = rearrange(gate_weight, '(b s) f -> b f s', b=x.shape[0], s=self.seq_size)
+        
+        # Step 4: 门控融合 + 残差
+        x_fused = gate_weight * x_cov + (1 - gate_weight) * x_bi
+        x_out = x_bi + self.res_scale * self.dropout(x_fused)
+        
+        return x_out

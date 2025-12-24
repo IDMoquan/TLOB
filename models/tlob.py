@@ -2,7 +2,7 @@ from torch import nn
 import torch
 from einops import rearrange
 import constants as cst
-from models.bin import BiN
+from models.bin import CovarianceAwareBiN
 from models.mlplob import MLP
 from models.gating import GatingLayer
 import numpy as np
@@ -72,7 +72,7 @@ class TLOB(nn.Module):
         self.first_branch = nn.ModuleList()
         self.second_branch = nn.ModuleList()
         self.order_type_embedder = nn.Embedding(3, 1)
-        self.norm_layer = BiN(num_features, seq_size)
+        self.norm_layer = CovarianceAwareBiN(num_features, seq_size)
         self.gating_layer = GatingLayer(num_features)
         self.emb_layer = nn.Linear(num_features, hidden_dim)
         if is_sin_emb:
