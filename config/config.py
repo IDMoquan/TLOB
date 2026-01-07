@@ -45,7 +45,7 @@ class Dataset:
 class FI_2010(Dataset):
     type: DatasetType = DatasetType.FI_2010
     dates: list = field(default_factory=lambda: ["2010-01-01", "2010-12-31"])
-    batch_size: int = 32
+    batch_size: int = 128
 
 @dataclass
 class LOBSTER(Dataset):
