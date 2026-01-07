@@ -61,6 +61,13 @@ class TLOB(nn.Module):
                  dataset_type: str
                  ) -> None:
         super().__init__()
+        group_indices = {
+            'bid_price': list(range(0, 10)),
+            'bid_volume': list(range(10, 20)),
+            'ask_price': list(range(20, 30)),
+            'ask_volume': list(range(30, 40)),
+            'other': list(range(40, num_features))
+        }
         
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
@@ -72,7 +79,13 @@ class TLOB(nn.Module):
         self.first_branch = nn.ModuleList()
         self.second_branch = nn.ModuleList()
         self.order_type_embedder = nn.Embedding(3, 1)
-        self.norm_layer = BiN(num_features, seq_size)
+        self.norm_layer = BiN(
+            d1=num_features,                # 总特征数（与原始一致）
+            t1=seq_size,                # 时间步长（与原始一致）
+            group_indices=group_indices,  # LOB分组
+            use_robust_stats=False  # 开启鲁棒统计量（抗极端值）
+        )
+
         self.gating_layer = GatingLayer(num_features)
         self.emb_layer = nn.Linear(num_features, hidden_dim)
         if is_sin_emb:
