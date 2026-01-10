@@ -65,7 +65,7 @@ class BTC(Dataset):
     sampling_type: SamplingType = SamplingType.NONE
     sampling_time: str = "100ms"
     sampling_quantity: int = 0
-    batch_size: int = 128
+    batch_size: int = 512
     training_stocks: list = field(default_factory=lambda: ["BTC"])
     testing_stocks: list = field(default_factory=lambda: ["BTC"])
 
